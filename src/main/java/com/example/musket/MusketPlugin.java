@@ -122,21 +122,6 @@ public class MusketPlugin extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void onProjectileLaunch(ProjectileLaunchEvent event) {
-        if (!(event.getEntity() instanceof Snowball snowball)) return;
-        if (!(snowball.getShooter() instanceof Player player)) return;
-        ItemStack hand = player.getInventory().getItemInMainHand();
-        if (hand != null && hand.getType() == Material.CROSSBOW) {
-            ItemMeta meta = hand.getItemMeta();
-            if (meta != null && meta.getPersistentDataContainer().has(musketKey, PersistentDataType.BYTE)) {
-                if (!snowball.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) {
-                    snowball.remove();
-                }
-            }
-        }
-    }
-
-    @EventHandler
     public void onProjectileHit(ProjectileHitEvent event) {
         if (!(event.getEntity() instanceof Snowball snowball)) return;
         if (!snowball.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) return;
