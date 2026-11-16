@@ -1,0 +1,15 @@
+name: MusketPlugin
+version: ${project.version}
+main: com.example.musket.MusketPlugin
+api-version: '1.21'
+author: You
+description: Плагин Мушкет
+commands:
+  musket:
+    description: Выдать мушкет
+    usage: /musket
+    permission: musket.give
+permissions:
+  musket.give:
+    description: Разрешение на получение мушкета
+    default: op
