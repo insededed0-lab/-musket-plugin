@@ -1,0 +1,160 @@
+package com.example.musket;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.*;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.*;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.ProjectileHitEvent;
+import org.bukkit.event.entity.ProjectileLaunchEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.CrossbowMeta;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.Vector;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+public class MusketPlugin extends JavaPlugin implements Listener {
+
+    private NamespacedKey musketKey;
+    private NamespacedKey bulletKey;
+    private final Map<UUID, Long> reloadMap = new HashMap<>();
+    private static final long RELOAD_MS = 3000L;
+
+    @Override
+    public void onEnable() {
+        musketKey = new NamespacedKey(this, "is_musket");
+        bulletKey = new NamespacedKey(this, "musket_bullet");
+
+        getServer().getPluginManager().registerEvents(this, this);
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                long now = System.currentTimeMillis();
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    Long end = reloadMap.get(p.getUniqueId());
+                    if (end != null) {
+                        long left = end - now;
+                        if (left <= 0) {
+                            reloadMap.remove(p.getUniqueId());
+                            p.sendActionBar(Component.text("✔ Мушкет перезаряжен!", NamedTextColor.GREEN));
+                        } else {
+                            double seconds = left / 1000.0;
+                            p.sendActionBar(Component.text(
+                                    "⟳ Перезарядка: " + String.format("%.1f", seconds) + " сек",
+                                    NamedTextColor.YELLOW));
+                        }
+                    }
+                }
+            }
+        }.runTaskTimer(this, 0L, 2L);
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("Команду может использовать только игрок.");
+            return true;
+        }
+        if (!player.hasPermission("musket.give")) {
+            player.sendMessage(Component.text("У тебя нет прав.", NamedTextColor.RED));
+            return true;
+        }
+
+        ItemStack musket = new ItemStack(Material.CROSSBOW);
+        CrossbowMeta meta = (CrossbowMeta) musket.getItemMeta();
+        meta.displayName(Component.text("Мушкет", NamedTextColor.GOLD));
+        meta.getPersistentDataContainer().set(musketKey, PersistentDataType.BYTE, (byte) 1);
+        musket.setItemMeta(meta);
+
+        player.getInventory().addItem(musket);
+        player.sendMessage(Component.text("🔫 Ты получил Мушкет!", NamedTextColor.GOLD));
+        return true;
+    }
+
+    @EventHandler
+    public void onInteract(PlayerInteractEvent event) {
+        if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+
+        Player player = event.getPlayer();
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType() != Material.CROSSBOW) return;
+
+        ItemMeta meta = hand.getItemMeta();
+        if (meta == null) return;
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        if (!pdc.has(musketKey, PersistentDataType.BYTE)) return;
+
+        Long reloadEnd = reloadMap.get(player.getUniqueId());
+        if (reloadEnd != null && System.currentTimeMillis() < reloadEnd) {
+            player.sendMessage(Component.text("⏳ Мушкет ещё перезаряжается!", NamedTextColor.RED));
+            return;
+        }
+
+        event.setCancelled(true);
+
+        reloadMap.put(player.getUniqueId(), System.currentTimeMillis() + RELOAD_MS);
+
+        Location eye = player.getEyeLocation();
+        Snowball bullet = player.launchProjectile(Snowball.class);
+        bullet.setVelocity(eye.getDirection().multiply(6));
+        bullet.getPersistentDataContainer().set(bulletKey, PersistentDataType.BYTE, (byte) 1);
+        bullet.setCustomName("Мушкетная пуля");
+
+        World world = player.getWorld();
+        world.spawnParticle(Particle.LARGE_SMOKE, eye, 25, 0.3, 0.3, 0.3, 0.02);
+        world.spawnParticle(Particle.EXPLOSION, eye, 1, 0, 0, 0, 0);
+        world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 3.0f, 0.8f);
+        world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 3.0f, 1.2f);
+    }
+
+    @EventHandler
+    public void onProjectileLaunch(ProjectileLaunchEvent event) {
+        if (!(event.getEntity() instanceof Snowball snowball)) return;
+        if (!(snowball.getShooter() instanceof Player player)) return;
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand != null && hand.getType() == Material.CROSSBOW) {
+            ItemMeta meta = hand.getItemMeta();
+            if (meta != null && meta.getPersistentDataContainer().has(musketKey, PersistentDataType.BYTE)) {
+                if (!snowball.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) {
+                    snowball.remove();
+                }
+            }
+        }
+    }
+
+    @EventHandler
+    public void onProjectileHit(ProjectileHitEvent event) {
+        if (!(event.getEntity() instanceof Snowball snowball)) return;
+        if (!snowball.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) return;
+
+        Entity hit = event.getHitEntity();
+        if (hit instanceof LivingEntity living) {
+            living.damage(14, snowball.getShooter() instanceof Entity e ? e : null);
+            World world = living.getWorld();
+            world.spawnParticle(Particle.DAMAGE_INDICATOR, living.getEyeLocation(), 15, 0.3, 0.5, 0.3, 0.01);
+            world.playSound(living.getLocation(), Sound.ENTITY_PLAYER_HURT, 2.0f, 0.6f);
+        }
+    }
+
+    @EventHandler
+    public void onDamage(EntityDamageByEntityEvent event) {
+        if (!(event.getDamager() instanceof Snowball snowball)) return;
+        if (!snowball.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) return;
+        event.setDamage(0);
+        event.setCancelled(true);
+    }
+}
