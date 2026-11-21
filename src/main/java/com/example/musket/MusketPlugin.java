@@ -173,7 +173,7 @@ public class MusketPlugin extends JavaPlugin implements Listener {
             world.spawnParticle(Particle.LARGE_SMOKE, effectLoc, 5, 0.1, 0.1, 0.1, 0.01);
             world.spawnParticle(Particle.FLAME, effectLoc, 4, 0.08, 0.08, 0.08, 0.005);
             world.spawnParticle(Particle.EXPLOSION, effectLoc, 1, 0, 0, 0, 0);
-            world.spawnParticle(Particle.SMOKE_NORMAL, effectLoc, 5, 0.08, 0.08, 0.08, 0.005);
+            world.spawnParticle(Particle.SMOKE, effectLoc, 5, 0.08, 0.08, 0.08, 0.005);
             world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 1.5f, 0.8f);
             world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 1.8f, 1.0f);
 
