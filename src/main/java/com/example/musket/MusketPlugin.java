@@ -1,5 +1,6 @@
 package com.example.musket;
 
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.*;
@@ -77,7 +78,7 @@ public class MusketPlugin extends JavaPlugin implements Listener {
 
         ItemStack musket = new ItemStack(Material.CROSSBOW);
         CrossbowMeta meta = (CrossbowMeta) musket.getItemMeta();
-        meta.displayName(Component.text("Мушкет", NamedTextColor.GOLD));
+        meta.displayName(Component.text("Кремнёвый мушкет", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
         meta.getPersistentDataContainer().set(musketKey, PersistentDataType.BYTE, (byte) 1);
         meta.getPersistentDataContainer().set(powderKey, PersistentDataType.BYTE, (byte) 0); // порох не заряжен
         meta.getPersistentDataContainer().set(bulletKey, PersistentDataType.BYTE, (byte) 0); // пуля не заряжена
