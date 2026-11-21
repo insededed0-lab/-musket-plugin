@@ -10,8 +10,6 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
-import org.bukkit.event.entity.ProjectileHitEvent;
-import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.CrossbowMeta;
@@ -30,6 +28,7 @@ public class MusketPlugin extends JavaPlugin implements Listener {
 
     private NamespacedKey musketKey;
     private NamespacedKey bulletKey;
+    private NamespacedKey powderKey; // ключ для пороха
     private final Map<UUID, Long> reloadMap = new HashMap<>();
     private static final long RELOAD_MS = 3000L;
 
@@ -37,9 +36,11 @@ public class MusketPlugin extends JavaPlugin implements Listener {
     public void onEnable() {
         musketKey = new NamespacedKey(this, "is_musket");
         bulletKey = new NamespacedKey(this, "musket_bullet");
+        powderKey = new NamespacedKey(this, "musket_powder");
 
         getServer().getPluginManager().registerEvents(this, this);
 
+        // Задача обновления ActionBar во время перезарядки
         new BukkitRunnable() {
             @Override
             public void run() {
@@ -78,95 +79,125 @@ public class MusketPlugin extends JavaPlugin implements Listener {
         CrossbowMeta meta = (CrossbowMeta) musket.getItemMeta();
         meta.displayName(Component.text("Мушкет", NamedTextColor.GOLD));
         meta.getPersistentDataContainer().set(musketKey, PersistentDataType.BYTE, (byte) 1);
+        meta.getPersistentDataContainer().set(powderKey, PersistentDataType.BYTE, (byte) 0); // порох не заряжен
+        meta.getPersistentDataContainer().set(bulletKey, PersistentDataType.BYTE, (byte) 0); // пуля не заряжена
         musket.setItemMeta(meta);
 
         player.getInventory().addItem(musket);
-        player.sendMessage(Component.text("🔫 Ты получил Мушкет!", NamedTextColor.GOLD));
+        player.sendMessage(Component.text("🔫 Ты получил Мушкет! Заряди порох и пулю.", NamedTextColor.GOLD));
         return true;
     }
 
     @EventHandler
-public void onInteract(PlayerInteractEvent event) {
-    if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+    public void onInteract(PlayerInteractEvent event) {
+        if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
 
-    Player player = event.getPlayer();
-    ItemStack hand = player.getInventory().getItemInMainHand();
-    if (hand == null || hand.getType() != Material.CROSSBOW) return;
+        Player player = event.getPlayer();
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType() != Material.CROSSBOW) return;
 
-    ItemMeta meta = hand.getItemMeta();
-    if (meta == null) return;
-    PersistentDataContainer pdc = meta.getPersistentDataContainer();
-    if (!pdc.has(musketKey, PersistentDataType.BYTE)) return;
+        ItemMeta meta = hand.getItemMeta();
+        if (meta == null) return;
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        if (!pdc.has(musketKey, PersistentDataType.BYTE)) return;
 
-    Long reloadEnd = reloadMap.get(player.getUniqueId());
-    if (reloadEnd != null && System.currentTimeMillis() < reloadEnd) {
-        player.sendMessage(Component.text("⏳ Мушкет ещё перезаряжается!", NamedTextColor.RED));
-        return;
+        // Проверяем что в руке
+        ItemStack offHand = player.getInventory().getItemInOffHand();
+        boolean hasGunpowder = offHand != null && offHand.getType() == Material.GUNPOWDER;
+        boolean hasIronNugget = offHand != null && offHand.getType() == Material.IRON_NUGGET;
+
+        // Проверяем состояние зарядки
+        byte powderLoaded = pdc.getOrDefault(powderKey, PersistentDataType.BYTE, (byte) 0);
+        byte bulletLoaded = pdc.getOrDefault(bulletKey, PersistentDataType.BYTE, (byte) 0);
+
+        // === ЗАРЯДКА ПОРОХА ===
+        if (hasGunpowder && powderLoaded == 0) {
+            pdc.set(powderKey, PersistentDataType.BYTE, (byte) 1);
+            hand.setItemMeta(meta);
+            player.sendMessage(Component.text("✔ Порох заряжен! Теперь заряди пулю.", NamedTextColor.GREEN));
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.0f);
+            return;
+        }
+
+        // === ЗАРЯДКА ПУЛИ ===
+        if (hasIronNugget && powderLoaded == 1 && bulletLoaded == 0) {
+            pdc.set(bulletKey, PersistentDataType.BYTE, (byte) 1);
+            hand.setItemMeta(meta);
+            player.sendMessage(Component.text("✔ Пуля заряжена! Мушкет готов к выстрелу.", NamedTextColor.GREEN));
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.2f);
+            return;
+        }
+
+        // === ВЫСТРЕЛ ===
+        if (powderLoaded == 1 && bulletLoaded == 1) {
+            // Проверка перезарядки
+            Long reloadEnd = reloadMap.get(player.getUniqueId());
+            if (reloadEnd != null && System.currentTimeMillis() < reloadEnd) {
+                player.sendMessage(Component.text("⏳ Мушкет ещё перезаряжается!", NamedTextColor.RED));
+                return;
+            }
+
+            event.setCancelled(true);
+            reloadMap.put(player.getUniqueId(), System.currentTimeMillis() + RELOAD_MS);
+
+            // Сбрасываем зарядку
+            pdc.set(powderKey, PersistentDataType.BYTE, (byte) 0);
+            pdc.set(bulletKey, PersistentDataType.BYTE, (byte) 0);
+            hand.setItemMeta(meta);
+
+            Location eye = player.getEyeLocation();
+            World world = player.getWorld();
+
+            // === Железный самородок с БАЛЛИСТИКОЙ ===
+            ItemStack bulletItem = new ItemStack(Material.IRON_NUGGET);
+            Item bullet = world.dropItem(eye, bulletItem);
+            
+            Vector direction = eye.getDirection().clone();
+            direction.setY(direction.getY() + 0.08);
+            
+            bullet.setVelocity(direction.multiply(2.5));
+            bullet.setGravity(true);
+            bullet.setPickupDelay(Integer.MAX_VALUE);
+            bullet.getPersistentDataContainer().set(bulletKey, PersistentDataType.BYTE, (byte) 1);
+
+            new BukkitRunnable() {
+                @Override
+                public void run() {
+                    if (bullet.isValid()) bullet.remove();
+                }
+            }.runTaskLater(this, 80L);
+
+            // === Эффекты выстрела ===
+            Location effectLoc = eye.clone().add(eye.getDirection().multiply(0.5));
+            world.spawnParticle(Particle.LARGE_SMOKE, effectLoc, 5, 0.1, 0.1, 0.1, 0.01);
+            world.spawnParticle(Particle.FLAME, effectLoc, 4, 0.08, 0.08, 0.08, 0.005);
+            world.spawnParticle(Particle.EXPLOSION, effectLoc, 1, 0, 0, 0, 0);
+            world.spawnParticle(Particle.SMOKE_NORMAL, effectLoc, 5, 0.08, 0.08, 0.08, 0.005);
+            world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 1.5f, 0.8f);
+            world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 1.8f, 1.0f);
+
+            player.sendMessage(Component.text("⚠ Мушкет разряжен! Заряди порох и пулю.", NamedTextColor.YELLOW));
+        } else if (powderLoaded == 0) {
+            player.sendMessage(Component.text("⚠ Сначала заряди порох (держите порох в левой руке).", NamedTextColor.YELLOW));
+        } else if (bulletLoaded == 0) {
+            player.sendMessage(Component.text("⚠ Порох заряжен. Теперь заряди пулю (держите самородок в левой руке).", NamedTextColor.YELLOW));
+        }
     }
 
-    event.setCancelled(true);
-    reloadMap.put(player.getUniqueId(), System.currentTimeMillis() + RELOAD_MS);
+    @EventHandler
+    public void onBulletDamage(EntityDamageByEntityEvent event) {
+        if (!(event.getDamager() instanceof Item bullet)) return;
+        if (!bullet.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) return;
 
-    Location eye = player.getEyeLocation();
-    World world = player.getWorld();
-
-    // === Железный самородок с БАЛЛИСТИКОЙ ===
-    ItemStack bulletItem = new ItemStack(Material.IRON_NUGGET);
-    Item bullet = world.dropItem(eye, bulletItem);
-    
-    // Направление выстрела с небольшим подъёмом вверх (как у мушкета)
-    Vector direction = eye.getDirection().clone();
-    direction.setY(direction.getY() + 0.08); // чуть приподнимаем ствол
-    
-    bullet.setVelocity(direction.multiply(2.5)); // скорость для баллистики
-    bullet.setGravity(true); // ✅ ВКЛЮЧАЕМ ГРАВИТАЦИЮ — пуля падает!
-    bullet.setPickupDelay(Integer.MAX_VALUE); // нельзя подобрать
-    bullet.getPersistentDataContainer().set(bulletKey, PersistentDataType.BYTE, (byte) 1);
-
-    // Удаляем самородок через 4 секунды (если не попал)
-    new BukkitRunnable() {
-        @Override
-        public void run() {
-            if (bullet.isValid()) bullet.remove();
+        if (event.getEntity() instanceof LivingEntity living) {
+            event.setDamage(14.0);
+            
+            World world = living.getWorld();
+            world.spawnParticle(Particle.DAMAGE_INDICATOR, living.getEyeLocation(), 15, 0.3, 0.5, 0.3, 0.01);
+            world.spawnParticle(Particle.EXPLOSION, living.getLocation(), 1, 0, 0, 0, 0);
+            world.playSound(living.getLocation(), Sound.ENTITY_PLAYER_HURT, 2.0f, 0.6f);
+            
+            bullet.remove();
         }
-    }.runTaskLater(this, 80L);
-
-    // === Эффекты выстрела (компактные, не закрывают экран) ===
-// Смещаем точку спавна на 0.5 блока вперёд от глаз
-Location effectLoc = eye.clone().add(eye.getDirection().multiply(0.5));
-
-// Белый дым (мало частиц, маленький разброс)
-world.spawnParticle(Particle.LARGE_SMOKE, effectLoc, 5, 0.1, 0.1, 0.1, 0.01);
-
-// Огненные частицы (компактно)
-world.spawnParticle(Particle.FLAME, effectLoc, 4, 0.08, 0.08, 0.08, 0.005);
-
-// Маленький взрыв (только 1 частица)
-world.spawnParticle(Particle.EXPLOSION, effectLoc, 1, 0, 0, 0, 0);
-
-// Чёрный дым (мало частиц)
-world.spawnParticle(Particle.SMOKE_NORMAL, effectLoc, 5, 0.08, 0.08, 0.08, 0.005);
-
-// Звуки выстрела (тише)
-world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 1.5f, 0.8f);
-world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 1.8f, 1.0f);
-}
-@EventHandler
-public void onBulletDamage(EntityDamageByEntityEvent event) {
-    if (!(event.getDamager() instanceof Item bullet)) return;
-    if (!bullet.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) return;
-
-    if (event.getEntity() instanceof LivingEntity living) {
-        // Наносим 14 урона (7 сердец)
-        event.setDamage(14.0);
-        
-        // Эффекты попадания
-        World world = living.getWorld();
-        world.spawnParticle(Particle.DAMAGE_INDICATOR, living.getEyeLocation(), 15, 0.3, 0.5, 0.3, 0.01);
-        world.spawnParticle(Particle.EXPLOSION, living.getLocation(), 1, 0, 0, 0, 0);
-        world.playSound(living.getLocation(), Sound.ENTITY_PLAYER_HURT, 2.0f, 0.6f);
-        
-        // Удаляем пулю после попадания
-        bullet.remove();
     }
 }
