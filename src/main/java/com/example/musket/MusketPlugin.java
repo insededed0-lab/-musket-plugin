@@ -18,7 +18,6 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
 import java.util.HashMap;
@@ -30,33 +29,30 @@ public class MusketPlugin extends JavaPlugin implements Listener {
     private NamespacedKey musketKey;
     private NamespacedKey powderKey;
     private NamespacedKey bulletKey;
-    private final Map<UUID, Long> reloadMap = new HashMap<>();
-    private static final long RELOAD_MS = 3000L;
+    private final Map<UUID, Long> cooldowns = new HashMap<>();
 
     @Override
     public void onEnable() {
         musketKey = new NamespacedKey(this, "is_musket");
-        powderKey = new NamespacedKey(this, "musket_powder");
-        bulletKey = new NamespacedKey(this, "musket_bullet");
+        powderKey = new NamespacedKey(this, "has_powder");
+        bulletKey = new NamespacedKey(this, "has_bullet");
 
         getServer().getPluginManager().registerEvents(this, this);
 
+        // Таймер перезарядки
         new BukkitRunnable() {
             @Override
             public void run() {
                 long now = System.currentTimeMillis();
                 for (Player p : Bukkit.getOnlinePlayers()) {
-                    Long end = reloadMap.get(p.getUniqueId());
+                    Long end = cooldowns.get(p.getUniqueId());
                     if (end != null) {
-                        long left = end - now;
-                        if (left <= 0) {
-                            reloadMap.remove(p.getUniqueId());
-                            p.sendActionBar(Component.text("✔ Готов к выстрелу", NamedTextColor.GREEN));
+                        if (now >= end) {
+                            cooldowns.remove(p.getUniqueId());
+                            p.sendActionBar(Component.text("✔ Готов", NamedTextColor.GREEN));
                         } else {
-                            double seconds = left / 1000.0;
-                            p.sendActionBar(Component.text(
-                                    "⟳ " + String.format("%.1f", seconds) + "с",
-                                    NamedTextColor.YELLOW));
+                            double sec = (end - now) / 1000.0;
+                            p.sendActionBar(Component.text("⟳ " + String.format("%.1f", sec) + "с", NamedTextColor.YELLOW));
                         }
                     }
                 }
@@ -68,10 +64,6 @@ public class MusketPlugin extends JavaPlugin implements Listener {
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage("Только игрок.");
-            return true;
-        }
-        if (!player.hasPermission("musket.give")) {
-            player.sendMessage(Component.text("Нет прав.", NamedTextColor.RED));
             return true;
         }
 
@@ -88,80 +80,79 @@ public class MusketPlugin extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void onInteract(PlayerInteractEvent event) {
+    public void onRightClick(PlayerInteractEvent event) {
         if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
 
         Player player = event.getPlayer();
-        ItemStack hand = player.getInventory().getItemInMainHand();
-        if (hand == null || hand.getType() != Material.CROSSBOW) return;
+        ItemStack mainHand = player.getInventory().getItemInMainHand();
+        
+        if (mainHand.getType() != Material.CROSSBOW) return;
 
-        ItemMeta meta = hand.getItemMeta();
+        ItemMeta meta = mainHand.getItemMeta();
         if (meta == null) return;
+        
         PersistentDataContainer pdc = meta.getPersistentDataContainer();
         if (!pdc.has(musketKey, PersistentDataType.BYTE)) return;
 
-        ItemStack offHand = player.getInventory().getItemInOffHand();
-        byte powderLoaded = pdc.getOrDefault(powderKey, PersistentDataType.BYTE, (byte) 0);
-        byte bulletLoaded = pdc.getOrDefault(bulletKey, PersistentDataType.BYTE, (byte) 0);
+        byte hasPowder = pdc.getOrDefault(powderKey, PersistentDataType.BYTE, (byte) 0);
+        byte hasBullet = pdc.getOrDefault(bulletKey, PersistentDataType.BYTE, (byte) 0);
 
-        // === ЗАРЯДКА ПОРОХА ===
-        if (offHand != null && offHand.getType() == Material.GUNPOWDER && powderLoaded == 0) {
+        ItemStack offHand = player.getInventory().getItemInOffHand();
+
+        // 1. Зарядка пороха
+        if (hasPowder == 0 && offHand != null && offHand.getType() == Material.GUNPOWDER) {
             pdc.set(powderKey, PersistentDataType.BYTE, (byte) 1);
-            hand.setItemMeta(meta);
+            mainHand.setItemMeta(meta);
+            
             if (offHand.getAmount() > 1) {
                 offHand.setAmount(offHand.getAmount() - 1);
             } else {
                 player.getInventory().setItemInOffHand(null);
             }
-            player.sendActionBar(Component.text("✔ Порох заряжен", NamedTextColor.GREEN));
+            
+            player.sendActionBar(Component.text("✔ Порох", NamedTextColor.GREEN));
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.0f);
             return;
         }
 
-        // === ЗАРЯДКА ПУЛИ (только если порох уже заряжен и пуля ещё нет) ===
-        if (offHand != null && offHand.getType() == Material.IRON_NUGGET && powderLoaded == 1 && bulletLoaded == 0) {
+        // 2. Зарядка пули
+        if (hasPowder == 1 && hasBullet == 0 && offHand != null && offHand.getType() == Material.IRON_NUGGET) {
             pdc.set(bulletKey, PersistentDataType.BYTE, (byte) 1);
-            hand.setItemMeta(meta);
+            mainHand.setItemMeta(meta);
+            
             if (offHand.getAmount() > 1) {
                 offHand.setAmount(offHand.getAmount() - 1);
             } else {
                 player.getInventory().setItemInOffHand(null);
             }
-            player.sendActionBar(Component.text("✔ Пуля заряжена", NamedTextColor.GREEN));
+            
+            player.sendActionBar(Component.text("✔ Пуля", NamedTextColor.GREEN));
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.2f);
             return;
         }
 
-        // === ВЫСТРЕЛ (только если И порох И пуля заряжены) ===
-        if (powderLoaded == 1 && bulletLoaded == 1) {
-            Long reloadEnd = reloadMap.get(player.getUniqueId());
-            if (reloadEnd != null && System.currentTimeMillis() < reloadEnd) return;
+        // 3. Выстрел
+        if (hasPowder == 1 && hasBullet == 1) {
+            Long cooldownEnd = cooldowns.get(player.getUniqueId());
+            if (cooldownEnd != null && System.currentTimeMillis() < cooldownEnd) {
+                return; // Ещё перезаряжается
+            }
 
             event.setCancelled(true);
-            reloadMap.put(player.getUniqueId(), System.currentTimeMillis() + RELOAD_MS);
+            cooldowns.put(player.getUniqueId(), System.currentTimeMillis() + 3000L);
 
-            // Сбрасываем оба флага
+            // Сброс зарядки
             pdc.set(powderKey, PersistentDataType.BYTE, (byte) 0);
             pdc.set(bulletKey, PersistentDataType.BYTE, (byte) 0);
-            hand.setItemMeta(meta);
+            mainHand.setItemMeta(meta);
 
             Location eye = player.getEyeLocation();
             World world = player.getWorld();
-
-            // Ray trace для урона
-            RayTraceResult ray = world.rayTraceEntities(eye, eye.getDirection(), 80.0, 0.3);
-            LivingEntity hitTarget = null;
-            Location hitLocation = eye.clone().add(eye.getDirection().multiply(80));
-
-            if (ray != null && ray.getHitEntity() instanceof LivingEntity living) {
-                hitTarget = living;
-                hitLocation = ray.getHitPosition().toLocation(world);
-            }
+            Vector dir = eye.getDirection().clone();
+            dir.setY(dir.getY() + 0.08);
 
             // Визуальная пуля
             Item bullet = world.dropItem(eye, new ItemStack(Material.IRON_NUGGET));
-            Vector dir = eye.getDirection().clone();
-            dir.setY(dir.getY() + 0.08);
             bullet.setVelocity(dir.multiply(2.5));
             bullet.setGravity(true);
             bullet.setPickupDelay(Integer.MAX_VALUE);
@@ -173,18 +164,20 @@ public class MusketPlugin extends JavaPlugin implements Listener {
                 }
             }.runTaskLater(this, 80L);
 
-            // Эффекты
-            Location fx = eye.clone().add(eye.getDirection().multiply(1.5));
+            // Проверка попадания (ray trace)
+            org.bukkit.util.RayTraceResult ray = world.rayTraceEntities(eye, dir, 80.0, 0.3);
+            
+            if (ray != null && ray.getHitEntity() instanceof LivingEntity target) {
+                target.damage(14.0, player);
+                world.spawnParticle(Particle.DAMAGE_INDICATOR, ray.getHitPosition().toLocation(world), 5, 0.2, 0.3, 0.2, 0.01);
+            }
+
+            // Эффекты выстрела
+            Location fx = eye.clone().add(dir.multiply(1.5));
             world.spawnParticle(Particle.LARGE_SMOKE, fx, 2, 0.05, 0.05, 0.05, 0.005);
             world.spawnParticle(Particle.FLAME, fx, 2, 0.05, 0.05, 0.05, 0.005);
             world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 1.0f, 0.9f);
             world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 1.2f, 1.1f);
-
-            // Урон
-            if (hitTarget != null) {
-                hitTarget.damage(14.0, player);
-                world.spawnParticle(Particle.DAMAGE_INDICATOR, hitLocation, 5, 0.2, 0.3, 0.2, 0.01);
-            }
         }
     }
 }
