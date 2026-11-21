@@ -110,69 +110,30 @@ public void onInteract(PlayerInteractEvent event) {
     Location eye = player.getEyeLocation();
     World world = player.getWorld();
 
-    // === RAY TRACING — мгновенная проверка попадания ===
-    double maxDistance = 80.0; // дальность мушкета
-    org.bukkit.util.RayTraceResult ray = world.rayTraceEntities(
-            eye,
-            eye.getDirection(),
-            maxDistance,
-            0.3 // радиус проверки (чуть больше хитбокса)
-    );
-
-    LivingEntity hitTarget = null;
-    Location hitLocation = eye.clone().add(eye.getDirection().multiply(maxDistance));
-
-    if (ray != null && ray.getHitEntity() instanceof LivingEntity living) {
-        hitTarget = living;
-        hitLocation = ray.getHitPosition().toLocation(world);
-    }
-
-    // === Визуальный снежок (летит для красоты) ===
-    Snowball bullet = player.launchProjectile(Snowball.class);
-    bullet.setVelocity(eye.getDirection().multiply(6)); // высокая скорость для визуала
+    // === Железный самородок с БАЛЛИСТИКОЙ ===
+    ItemStack bulletItem = new ItemStack(Material.IRON_NUGGET);
+    Item bullet = world.dropItem(eye, bulletItem);
+    
+    // Направление выстрела с небольшим подъёмом вверх (как у мушкета)
+    Vector direction = eye.getDirection().clone();
+    direction.setY(direction.getY() + 0.08); // чуть приподнимаем ствол
+    
+    bullet.setVelocity(direction.multiply(2.5)); // скорость для баллистики
+    bullet.setGravity(true); // ✅ ВКЛЮЧАЕМ ГРАВИТАЦИЮ — пуля падает!
+    bullet.setPickupDelay(Integer.MAX_VALUE); // нельзя подобрать
     bullet.getPersistentDataContainer().set(bulletKey, PersistentDataType.BYTE, (byte) 1);
-    bullet.setCustomName("Мушкетная пуля");
-    bullet.setGravity(false); // убираем гравитацию — летит прямо
 
-    // Удаляем снежок через 1.5 секунды (чтобы не засорял мир)
+    // Удаляем самородок через 4 секунды (если не попал)
     new BukkitRunnable() {
         @Override
         public void run() {
             if (bullet.isValid()) bullet.remove();
         }
-    }.runTaskLater(this, 30L);
+    }.runTaskLater(this, 80L);
 
     // === Эффекты выстрела ===
     world.spawnParticle(Particle.LARGE_SMOKE, eye, 25, 0.3, 0.3, 0.3, 0.02);
     world.spawnParticle(Particle.EXPLOSION, eye, 1, 0, 0, 0, 0);
     world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 3.0f, 0.8f);
     world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 3.0f, 1.2f);
-
-    // === Наносим урон через ray trace (надёжно!) ===
-    if (hitTarget != null) {
-        hitTarget.damage(14.0, player);
-
-        // Эффекты попадания
-        world.spawnParticle(Particle.DAMAGE_INDICATOR, hitLocation, 15, 0.3, 0.5, 0.3, 0.01);
-        world.spawnParticle(Particle.EXPLOSION, hitLocation, 1, 0, 0, 0, 0);
-        world.playSound(hitLocation, Sound.ENTITY_PLAYER_HURT, 2.0f, 0.6f);
-    }
-}
-        event.setCancelled(true);
-
-        reloadMap.put(player.getUniqueId(), System.currentTimeMillis() + RELOAD_MS);
-
-        Location eye = player.getEyeLocation();
-        Snowball bullet = player.launchProjectile(Snowball.class);
-        bullet.setVelocity(eye.getDirection().multiply(6));
-        bullet.getPersistentDataContainer().set(bulletKey, PersistentDataType.BYTE, (byte) 1);
-        bullet.setCustomName("Мушкетная пуля");
-
-        World world = player.getWorld();
-        world.spawnParticle(Particle.LARGE_SMOKE, eye, 25, 0.3, 0.3, 0.3, 0.02);
-        world.spawnParticle(Particle.EXPLOSION, eye, 1, 0, 0, 0, 0);
-        world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 3.0f, 0.8f);
-        world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 3.0f, 1.2f);
-    }
-    
 }
