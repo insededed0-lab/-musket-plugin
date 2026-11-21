@@ -137,3 +137,22 @@ public void onInteract(PlayerInteractEvent event) {
     world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 3.0f, 0.8f);
     world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 3.0f, 1.2f);
 }
+@EventHandler
+public void onBulletDamage(EntityDamageByEntityEvent event) {
+    if (!(event.getDamager() instanceof Item bullet)) return;
+    if (!bullet.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) return;
+
+    if (event.getEntity() instanceof LivingEntity living) {
+        // Наносим 14 урона (7 сердец)
+        event.setDamage(14.0);
+        
+        // Эффекты попадания
+        World world = living.getWorld();
+        world.spawnParticle(Particle.DAMAGE_INDICATOR, living.getEyeLocation(), 15, 0.3, 0.5, 0.3, 0.01);
+        world.spawnParticle(Particle.EXPLOSION, living.getLocation(), 1, 0, 0, 0, 0);
+        world.playSound(living.getLocation(), Sound.ENTITY_PLAYER_HURT, 2.0f, 0.6f);
+        
+        // Удаляем пулю после попадания
+        bullet.remove();
+    }
+}
