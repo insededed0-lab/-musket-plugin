@@ -86,23 +86,40 @@ public class MusketPlugin extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void onInteract(PlayerInteractEvent event) {
-        if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+public void onInteract(PlayerInteractEvent event) {
+    if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
 
-        Player player = event.getPlayer();
-        ItemStack hand = player.getInventory().getItemInMainHand();
-        if (hand == null || hand.getType() != Material.CROSSBOW) return;
+    Player player = event.getPlayer();
+    ItemStack hand = player.getInventory().getItemInMainHand();
+    if (hand == null || hand.getType() != Material.CROSSBOW) return;
 
-        ItemMeta meta = hand.getItemMeta();
-        if (meta == null) return;
-        PersistentDataContainer pdc = meta.getPersistentDataContainer();
-        if (!pdc.has(musketKey, PersistentDataType.BYTE)) return;
+    ItemMeta meta = hand.getItemMeta();
+    if (meta == null) return;
+    PersistentDataContainer pdc = meta.getPersistentDataContainer();
+    if (!pdc.has(musketKey, PersistentDataType.BYTE)) return;
 
-        Long reloadEnd = reloadMap.get(player.getUniqueId());
-        if (reloadEnd != null && System.currentTimeMillis() < reloadEnd) {
-            player.sendMessage(Component.text("⏳ Мушкет ещё перезаряжается!", NamedTextColor.RED));
-            return;
-        }
+    Long reloadEnd = reloadMap.get(player.getUniqueId());
+    if (reloadEnd != null && System.currentTimeMillis() < reloadEnd) {
+        player.sendMessage(Component.text("⏳ Мушкет ещё перезаряжается!", NamedTextColor.RED));
+        return;
+    }
+
+    event.setCancelled(true);
+
+    reloadMap.put(player.getUniqueId(), System.currentTimeMillis() + RELOAD_MS);
+
+    Location eye = player.getEyeLocation();
+    Snowball bullet = player.launchProjectile(Snowball.class);
+    bullet.setVelocity(eye.getDirection().multiply(3.5)); // ← ИЗМЕНЕНО: было 6
+    bullet.getPersistentDataContainer().set(bulletKey, PersistentDataType.BYTE, (byte) 1);
+    bullet.setCustomName("Мушкетная пуля");
+
+    World world = player.getWorld();
+    world.spawnParticle(Particle.LARGE_SMOKE, eye, 25, 0.3, 0.3, 0.3, 0.02);
+    world.spawnParticle(Particle.EXPLOSION, eye, 1, 0, 0, 0, 0);
+    world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 3.0f, 0.8f);
+    world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 3.0f, 1.2f);
+}
 
         event.setCancelled(true);
 
