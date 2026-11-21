@@ -131,11 +131,25 @@ public void onInteract(PlayerInteractEvent event) {
         }
     }.runTaskLater(this, 80L);
 
-    // === Эффекты выстрела ===
-    world.spawnParticle(Particle.LARGE_SMOKE, eye, 25, 0.3, 0.3, 0.3, 0.02);
-    world.spawnParticle(Particle.EXPLOSION, eye, 1, 0, 0, 0, 0);
-    world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 3.0f, 0.8f);
-    world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 3.0f, 1.2f);
+    // === Эффекты выстрела (компактные, не закрывают экран) ===
+// Смещаем точку спавна на 0.5 блока вперёд от глаз
+Location effectLoc = eye.clone().add(eye.getDirection().multiply(0.5));
+
+// Белый дым (мало частиц, маленький разброс)
+world.spawnParticle(Particle.LARGE_SMOKE, effectLoc, 5, 0.1, 0.1, 0.1, 0.01);
+
+// Огненные частицы (компактно)
+world.spawnParticle(Particle.FLAME, effectLoc, 4, 0.08, 0.08, 0.08, 0.005);
+
+// Маленький взрыв (только 1 частица)
+world.spawnParticle(Particle.EXPLOSION, effectLoc, 1, 0, 0, 0, 0);
+
+// Чёрный дым (мало частиц)
+world.spawnParticle(Particle.SMOKE_NORMAL, effectLoc, 5, 0.08, 0.08, 0.08, 0.005);
+
+// Звуки выстрела (тише)
+world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 1.5f, 0.8f);
+world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 1.8f, 1.0f);
 }
 @EventHandler
 public void onBulletDamage(EntityDamageByEntityEvent event) {
