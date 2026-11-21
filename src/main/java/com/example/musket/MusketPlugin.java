@@ -174,26 +174,5 @@ public void onInteract(PlayerInteractEvent event) {
         world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 3.0f, 0.8f);
         world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 3.0f, 1.2f);
     }
-
-    @EventHandler
-    public void onProjectileHit(ProjectileHitEvent event) {
-        if (!(event.getEntity() instanceof Snowball snowball)) return;
-        if (!snowball.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) return;
-
-        Entity hit = event.getHitEntity();
-        if (hit instanceof LivingEntity living) {
-            living.damage(14, snowball.getShooter() instanceof Entity e ? e : null);
-            World world = living.getWorld();
-            world.spawnParticle(Particle.DAMAGE_INDICATOR, living.getEyeLocation(), 15, 0.3, 0.5, 0.3, 0.01);
-            world.playSound(living.getLocation(), Sound.ENTITY_PLAYER_HURT, 2.0f, 0.6f);
-        }
-    }
-
-    @EventHandler
-    public void onDamage(EntityDamageByEntityEvent event) {
-        if (!(event.getDamager() instanceof Snowball snowball)) return;
-        if (!snowball.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) return;
-        event.setDamage(0);
-        event.setCancelled(true);
-    }
+    
 }
