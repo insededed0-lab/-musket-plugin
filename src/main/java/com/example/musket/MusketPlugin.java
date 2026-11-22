@@ -10,8 +10,6 @@ import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
-import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.CrossbowMeta;
@@ -20,6 +18,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
 import java.util.HashMap;
@@ -163,6 +162,33 @@ public class MusketPlugin extends JavaPlugin implements Listener {
         Location eye = player.getEyeLocation();
         World world = player.getWorld();
 
+        // === RAY TRACE — ищем живую цель по лучу ===
+        double maxDistance = 80.0;
+        LivingEntity hitTarget = null;
+        Location hitLocation = null;
+
+        // Ищем только LivingEntity (игнорируем блоки)
+        RayTraceResult ray = world.rayTraceEntities(
+                eye,
+                eye.getDirection(),
+                maxDistance,
+                0.5
+        );
+
+        if (ray != null && ray.getHitEntity() instanceof LivingEntity living) {
+            hitTarget = living;
+            hitLocation = ray.getHitPosition().toLocation(world);
+        }
+
+        // Отладка в чат (временно, чтобы понять что не так)
+        if (ray == null) {
+            player.sendMessage(Component.text("[Musket] Ray = null (никого не видит)", NamedTextColor.DARK_GRAY));
+        } else if (ray.getHitEntity() == null) {
+            player.sendMessage(Component.text("[Musket] Ray попал в блок/землю", NamedTextColor.DARK_GRAY));
+        } else {
+            player.sendMessage(Component.text("[Musket] Цель найдена: " + ray.getHitEntity().getType(), NamedTextColor.DARK_GRAY));
+        }
+
         // === Визуальная пуля с баллистикой ===
         ItemStack bulletItem = new ItemStack(Material.IRON_NUGGET);
         Item bullet = world.dropItem(eye, bulletItem);
@@ -180,35 +206,21 @@ public class MusketPlugin extends JavaPlugin implements Listener {
             }
         }.runTaskLater(this, 60L);
 
-        // === Компактные эффекты (смещены вперёд, не закрывают экран) ===
+        // === Компактные эффекты ===
         Location fx = eye.clone().add(eye.getDirection().multiply(1.2));
         world.spawnParticle(Particle.LARGE_SMOKE, fx, 3, 0.05, 0.05, 0.05, 0.005);
         world.spawnParticle(Particle.FLAME, fx, 3, 0.05, 0.05, 0.05, 0.005);
         world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 1.0f, 0.9f);
         world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 1.2f, 1.1f);
 
-        player.sendActionBar(Component.text("💥 Выстрел!", NamedTextColor.GOLD));
-    }
-
-    // === Урон от визуальной пули (если попадёт) ===
-    @EventHandler
-    public void onBulletHit(EntityDamageByEntityEvent event) {
-        if (!(event.getDamager() instanceof Item bullet)) return;
-        if (!bullet.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) return;
-
-        if (event.getEntity() instanceof LivingEntity living) {
-            event.setDamage(14.0);
-            World world = living.getWorld();
-            world.spawnParticle(Particle.DAMAGE_INDICATOR, living.getEyeLocation(), 8, 0.2, 0.3, 0.2, 0.01);
-            world.playSound(living.getLocation(), Sound.ENTITY_PLAYER_HURT, 1.5f, 0.7f);
-            bullet.remove();
+        // === Наносим урон если цель найдена ===
+        if (hitTarget != null && hitLocation != null) {
+            hitTarget.damage(14.0, player);
+            world.spawnParticle(Particle.DAMAGE_INDICATOR, hitLocation, 8, 0.2, 0.3, 0.2, 0.01);
+            world.playSound(hitLocation, Sound.ENTITY_PLAYER_HURT, 1.5f, 0.7f);
+            player.sendActionBar(Component.text("💥 Попадание! 14 урона", NamedTextColor.RED));
+        } else {
+            player.sendActionBar(Component.text("💥 Промах", NamedTextColor.GRAY));
         }
-    }
-
-    // === Запрет подбора пули ===
-    @EventHandler
-    public void onPickup(EntityPickupItemEvent event) {
-        if (!event.getEntity().getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) return;
-        event.setCancelled(true);
     }
 }
