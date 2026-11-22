@@ -129,7 +129,7 @@ public class MusketPlugin extends JavaPlugin implements Listener {
             player.sendActionBar(Component.text("✔ Пуля заряжена", NamedTextColor.GREEN));
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.2f);
             event.setCancelled(true);
-            return; // ВАЖНО: не стреляем при зарядке!
+            return; 
         }
 
         // 3. ПРЕДУПРЕЖДЕНИЯ
@@ -155,7 +155,7 @@ public class MusketPlugin extends JavaPlugin implements Listener {
         event.setCancelled(true);
         reloadMap.put(player.getUniqueId(), System.currentTimeMillis() + RELOAD_MS);
 
-        // Разряжаем
+        // Разряжаем мушкет
         pdc.set(powderKey, PersistentDataType.BYTE, (byte) 0);
         pdc.set(bulletKey, PersistentDataType.BYTE, (byte) 0);
         hand.setItemMeta(meta);
@@ -164,7 +164,7 @@ public class MusketPlugin extends JavaPlugin implements Listener {
         World world = player.getWorld();
         Vector direction = eye.getDirection().clone();
 
-        // Ищем цель лучом (как в рабочем DEBUG коде)
+        // === Мгновенный урон по лучу (RayTrace) ===
         LivingEntity hitTarget = null;
         Location hitLocation = null;
         RayTraceResult ray = world.rayTraceEntities(eye, direction, 80.0, 0.5);
@@ -173,34 +173,42 @@ public class MusketPlugin extends JavaPlugin implements Listener {
             hitLocation = ray.getHitPosition().toLocation(world);
         }
 
-        // Визуальная пуля (баллистика, летит вперёд)
-        Location spawnLoc = eye.clone().add(direction.multiply(1.0));
-        Item bullet = world.dropItem(spawnLoc, new ItemStack(Material.IRON_NUGGET));
+        // === ВИЗУАЛЬНАЯ ПУЛЯ (Исправлено от отскока) ===
+        // Сначала спавним её прямо в глазах, но мгновенно телепортируем на 2 блока вперёд
+        Location spawnLoc = eye.clone().add(direction.clone().multiply(2.0));
+        
+        // Временный 0-вектор чтобы предмет не отскочил
+        Item bullet = world.dropItem(eye, new ItemStack(Material.IRON_NUGGET)); 
+        bullet.teleport(spawnLoc); // Телепорт на 2 блока вперёд
+        
         Vector vel = direction.clone();
-        vel.setY(vel.getY() + 0.08);
+        vel.setY(vel.getY() + 0.08); 
         bullet.setVelocity(vel.multiply(3.0));
         bullet.setGravity(true);
         bullet.setPickupDelay(Integer.MAX_VALUE);
 
+        // Удаляем через 2.5 секунды
         new BukkitRunnable() {
             @Override
             public void run() {
                 if (bullet.isValid()) bullet.remove();
             }
-        }.runTaskLater(this, 60L);
+        }.runTaskLater(this, 50L);
 
-        // Эффекты
+        // === Эффекты ===
         Location fx = eye.clone().add(direction.multiply(1.2));
         world.spawnParticle(Particle.LARGE_SMOKE, fx, 3, 0.05, 0.05, 0.05, 0.005);
         world.spawnParticle(Particle.FLAME, fx, 3, 0.05, 0.05, 0.05, 0.005);
         world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 1.0f, 0.9f);
         world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 1.2f, 1.1f);
 
-        // Урон
+        // === Нанесение урона ===
         if (hitTarget != null && hitLocation != null) {
             hitTarget.damage(14.0, player);
-            world.spawnParticle(Particle.DAMAGE_INDICATOR, hitLocation, 8, 0.2, 0.3, 0.2, 0.01);
+            
+            // Стандартные эффекты попадания (без сердец)
             world.playSound(hitLocation, Sound.ENTITY_PLAYER_HURT, 1.5f, 0.7f);
+            world.spawnParticle(Particle.EXPLOSION, hitLocation, 1, 0, 0, 0, 0); // Маленький взрыв на месте попадания
             player.sendActionBar(Component.text("💥 Попадание! 14 урона", NamedTextColor.RED));
         } else {
             player.sendActionBar(Component.text("💥 Промах", NamedTextColor.GRAY));
