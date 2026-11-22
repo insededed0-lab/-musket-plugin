@@ -117,6 +117,7 @@ public class MusketPlugin extends JavaPlugin implements Listener {
             }
             player.sendActionBar(Component.text("✔ Порох заряжен", NamedTextColor.GREEN));
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.0f);
+            event.setCancelled(true);
             return;
         }
 
@@ -131,23 +132,27 @@ public class MusketPlugin extends JavaPlugin implements Listener {
             }
             player.sendActionBar(Component.text("✔ Пуля заряжена", NamedTextColor.GREEN));
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.2f);
-            return;
+            event.setCancelled(true);
+            return; // ⬅️ ВАЖНО: не проваливаемся в выстрел!
         }
 
         // === ПРЕДУПРЕЖДЕНИЯ ===
         if (powderLoaded == 0) {
             player.sendActionBar(Component.text("⚠ Нужен порох", NamedTextColor.YELLOW));
+            event.setCancelled(true);
             return;
         }
         if (powderLoaded == 1 && bulletLoaded == 0) {
             player.sendActionBar(Component.text("⚠ Нужна пуля (железный самородок)", NamedTextColor.YELLOW));
+            event.setCancelled(true);
             return;
         }
 
-        // === ВЫСТРЕЛ ===
+        // === ВЫСТРЕЛ (только если заряжено ВСЁ) ===
         Long reloadEnd = reloadMap.get(player.getUniqueId());
         if (reloadEnd != null && System.currentTimeMillis() < reloadEnd) {
             player.sendActionBar(Component.text("⏳ Перезарядка...", NamedTextColor.RED));
+            event.setCancelled(true);
             return;
         }
 
@@ -161,40 +166,23 @@ public class MusketPlugin extends JavaPlugin implements Listener {
 
         Location eye = player.getEyeLocation();
         World world = player.getWorld();
+        Vector direction = eye.getDirection().clone();
 
-        // === RAY TRACE — ищем живую цель по лучу ===
-        double maxDistance = 80.0;
+        // === RAY TRACE — урон по лучу ===
         LivingEntity hitTarget = null;
         Location hitLocation = null;
-
-        // Ищем только LivingEntity (игнорируем блоки)
-        RayTraceResult ray = world.rayTraceEntities(
-                eye,
-                eye.getDirection(),
-                maxDistance,
-                0.5
-        );
-
+        RayTraceResult ray = world.rayTraceEntities(eye, direction, 80.0, 0.5);
         if (ray != null && ray.getHitEntity() instanceof LivingEntity living) {
             hitTarget = living;
             hitLocation = ray.getHitPosition().toLocation(world);
         }
 
-        // Отладка в чат (временно, чтобы понять что не так)
-        if (ray == null) {
-            player.sendMessage(Component.text("[Musket] Ray = null (никого не видит)", NamedTextColor.DARK_GRAY));
-        } else if (ray.getHitEntity() == null) {
-            player.sendMessage(Component.text("[Musket] Ray попал в блок/землю", NamedTextColor.DARK_GRAY));
-        } else {
-            player.sendMessage(Component.text("[Musket] Цель найдена: " + ray.getHitEntity().getType(), NamedTextColor.DARK_GRAY));
-        }
-
-        // === Визуальная пуля с баллистикой ===
-        ItemStack bulletItem = new ItemStack(Material.IRON_NUGGET);
-        Item bullet = world.dropItem(eye, bulletItem);
-        Vector dir = eye.getDirection().clone();
-        dir.setY(dir.getY() + 0.08);
-        bullet.setVelocity(dir.multiply(3.0));
+        // === Визуальная пуля (спавним ВПЕРЕДИ игрока, а не внутри) ===
+        Location spawnLoc = eye.clone().add(direction.multiply(1.0)); // ⬅️ 1 блок вперёд
+        Item bullet = world.dropItem(spawnLoc, new ItemStack(Material.IRON_NUGGET));
+        Vector vel = direction.clone();
+        vel.setY(vel.getY() + 0.08);
+        bullet.setVelocity(vel.multiply(3.0));
         bullet.setGravity(true);
         bullet.setPickupDelay(Integer.MAX_VALUE);
         bullet.getPersistentDataContainer().set(bulletKey, PersistentDataType.BYTE, (byte) 1);
@@ -207,13 +195,13 @@ public class MusketPlugin extends JavaPlugin implements Listener {
         }.runTaskLater(this, 60L);
 
         // === Компактные эффекты ===
-        Location fx = eye.clone().add(eye.getDirection().multiply(1.2));
+        Location fx = eye.clone().add(direction.multiply(1.2));
         world.spawnParticle(Particle.LARGE_SMOKE, fx, 3, 0.05, 0.05, 0.05, 0.005);
         world.spawnParticle(Particle.FLAME, fx, 3, 0.05, 0.05, 0.05, 0.005);
         world.playSound(eye, Sound.ENTITY_GENERIC_EXPLODE, 1.0f, 0.9f);
         world.playSound(eye, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 1.2f, 1.1f);
 
-        // === Наносим урон если цель найдена ===
+        // === Урон ===
         if (hitTarget != null && hitLocation != null) {
             hitTarget.damage(14.0, player);
             world.spawnParticle(Particle.DAMAGE_INDICATOR, hitLocation, 8, 0.2, 0.3, 0.2, 0.01);
