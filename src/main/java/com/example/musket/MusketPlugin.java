@@ -11,8 +11,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.PrepareItemCraftEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.ShapedRecipe;
@@ -34,19 +36,23 @@ public class MusketPlugin extends JavaPlugin implements Listener {
     private NamespacedKey powderKey;
     private NamespacedKey bulletKey;
     private NamespacedKey recipeKey;
+    
     private final Map<UUID, Long> reloadMap = new HashMap<>();
     private static final long RELOAD_MS = 3000L;
 
     @Override
     public void onEnable() {
+        // Инициализация ключей
         musketKey = new NamespacedKey(this, "is_musket");
         powderKey = new NamespacedKey(this, "musket_powder");
         bulletKey = new NamespacedKey(this, "musket_bullet");
+        recipeKey = new NamespacedKey(this, "musket_recipe");
 
         getServer().getPluginManager().registerEvents(this, this);
 
         registerMusketRecipe();
 
+        // Таск перезарядки
         new BukkitRunnable() {
             @Override
             public void run() {
@@ -75,7 +81,7 @@ public class MusketPlugin extends JavaPlugin implements Listener {
         if (recipeKey != null) Bukkit.removeRecipe(recipeKey);
     }
 
-    // ================== СОЗДАНИЕ МУШКЕТА ==================
+    // ================== СОЗДАНИЕ И КРАФТ ==================
 
     private ItemStack createMusket() {
         ItemStack musket = new ItemStack(Material.CROSSBOW);
@@ -89,37 +95,57 @@ public class MusketPlugin extends JavaPlugin implements Listener {
         return musket;
     }
 
-    // ================== КРАФТ ==================
-
     private void registerMusketRecipe() {
-        recipeKey = new NamespacedKey(this, "musket");
         Bukkit.removeRecipe(recipeKey);
 
-        ShapedRecipe recipe = new ShapedRecipe(recipeKey, createMusket());
-        
-        // Крафт по вашему скриншоту
+        // Создаем предмет-пустышку без NBT для отображения в книге рецептов
+        ItemStack visualResult = new ItemStack(Material.CROSSBOW);
+        ItemMeta visualMeta = visualResult.getItemMeta();
+        if (visualMeta != null) {
+            visualMeta.displayName(Component.text("Кремнёвый мушкет", NamedTextColor.GRAY)
+                    .decoration(TextDecoration.ITALIC, false));
+            visualResult.setItemMeta(visualMeta);
+        }
+
+        ShapedRecipe recipe = new ShapedRecipe(recipeKey, visualResult);
+        // Схема по вашему скриншоту:
+        // Пусто, Железный слиток, Алмаз
+        // Палка, Железный блок, Железный блок
+        // Палка, Палка, Пусто
         recipe.shape(
-                " ID", // Пусто, Железный слиток, Алмаз
-                "SBB", // Палка, Железный блок, Железный блок
-                "SS "  // Палка, Палка, Пусто
+                " ID",
+                "SBB",
+                "SS "
         );
-        
         recipe.setIngredient('I', Material.IRON_INGOT);
         recipe.setIngredient('D', Material.DIAMOND);
         recipe.setIngredient('S', Material.STICK);
         recipe.setIngredient('B', Material.IRON_BLOCK);
 
-        Bukkit.addRecipe(recipe);
+        // true - обновляет рецепты у всех онлайн игроков
+        Bukkit.addRecipe(recipe, true);
     }
 
-    // Страховка: принудительно подсовываем правильный результат
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        // Выдаем рецепт в книгу крафта при входе
+        event.getPlayer().discoverRecipe(recipeKey);
+    }
+
     @EventHandler
     public void onPrepareCraft(PrepareItemCraftEvent event) {
         Recipe recipe = event.getRecipe();
-        if (!(recipe instanceof Keyed keyed)) return;
-        if (recipeKey == null || !recipeKey.equals(keyed.getKey())) return;
+        if (recipe instanceof Keyed keyed && recipeKey.equals(keyed.getKey())) {
+            event.getInventory().setResult(createMusket());
+        }
+    }
 
-        event.getInventory().setResult(createMusket());
+    @EventHandler
+    public void onCraftItem(CraftItemEvent event) {
+        Recipe recipe = event.getRecipe();
+        if (recipe instanceof Keyed keyed && recipeKey.equals(keyed.getKey())) {
+            event.getInventory().setResult(createMusket());
+        }
     }
 
     // ================== КОМАНДА /musket ==================
@@ -133,7 +159,7 @@ public class MusketPlugin extends JavaPlugin implements Listener {
         return true;
     }
 
-    // ================== ВЗАИМОДЕЙСТВИЕ ==================
+    // ================== ВЗАИМОДЕЙСТВИЕ И СТРЕЛЬБА ==================
 
     @EventHandler
     public void onInteract(PlayerInteractEvent event) {
@@ -244,10 +270,4 @@ public class MusketPlugin extends JavaPlugin implements Listener {
             snowball.remove();
         }
     }
-    @EventHandler
-public void onPlayerJoin(PlayerJoinEvent event) {
-    Player player = event.getPlayer();
-    // Выдаём рецепт в книгу крафта
-    player.discoverRecipe(recipeKey);
-}
 }
