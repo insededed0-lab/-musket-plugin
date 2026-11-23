@@ -244,4 +244,10 @@ public class MusketPlugin extends JavaPlugin implements Listener {
             snowball.remove();
         }
     }
+    @EventHandler
+public void onPlayerJoin(PlayerJoinEvent event) {
+    Player player = event.getPlayer();
+    // Выдаём рецепт в книгу крафта
+    player.discoverRecipe(recipeKey);
+}
 }
