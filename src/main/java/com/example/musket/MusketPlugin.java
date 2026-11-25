@@ -262,7 +262,7 @@ public class MusketPlugin extends JavaPlugin implements Listener {
         if (!snowball.getPersistentDataContainer().has(bulletKey, PersistentDataType.BYTE)) return;
 
         if (event.getEntity() instanceof LivingEntity living) {
-            event.setDamage(14.0);
+            event.setDamage(19.0);
 
             living.getWorld().playSound(living.getLocation(), Sound.ENTITY_PLAYER_HURT, 1.5f, 0.7f);
             living.getWorld().spawnParticle(Particle.CRIT, living.getLocation().add(0, 1, 0), 10, 0.2, 0.2, 0.2, 0.1);
